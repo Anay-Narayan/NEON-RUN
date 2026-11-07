@@ -335,6 +335,28 @@
   .dpad-btn:active,.dpad-btn.pressed { background:rgba(242,239,230,0.3); box-shadow:0 -3px 0 0 var(--ink),0 3px 0 0 var(--ink),-3px 0 0 0 var(--ink),3px 0 0 0 var(--ink); }
   #portrait-msg { font-family:var(--px); font-size:12px; line-height:2; }
   #portrait-msg p { font-family:var(--body); font-size:20px; }
+
+  /* ===== admin interface ===== */
+  #cheat-box { width:470px; max-height:92%; overflow-y:auto; }
+  #admin-pass { width:100%; box-sizing:border-box; font-family:var(--px); font-size:12px; letter-spacing:3px; padding:12px; margin:6px 3px 8px; background:#000; color:var(--ink); border:none; outline:none; box-shadow:0 -3px 0 0 var(--line),0 3px 0 0 var(--line),-3px 0 0 0 var(--line),3px 0 0 0 var(--line); }
+  #admin-pass:focus { box-shadow:0 -3px 0 0 #4fe070,0 3px 0 0 #4fe070,-3px 0 0 0 #4fe070,3px 0 0 0 #4fe070; }
+  #admin-err { font-family:var(--px); font-size:8px; color:var(--warn); min-height:14px; margin:6px 0 4px; }
+  .adm-head { display:flex; justify-content:space-between; align-items:center; margin-bottom:12px; }
+  .adm-head h2 { margin:0 !important; }
+  .adm-tabs { display:flex; gap:10px; margin:0 3px 16px; }
+  .adm-btn, .adm-tab { font-family:var(--px); font-size:8px; text-transform:uppercase; letter-spacing:0; color:var(--dim); background:var(--panel); border:none; padding:9px 10px; cursor:pointer; box-shadow:0 -2px 0 0 var(--line),0 2px 0 0 var(--line),-2px 0 0 0 var(--line),2px 0 0 0 var(--line); }
+  .adm-btn:hover, .adm-tab:hover { color:var(--ink); box-shadow:0 -2px 0 0 var(--dim),0 2px 0 0 var(--dim),-2px 0 0 0 var(--dim),2px 0 0 0 var(--dim); }
+  .adm-tab.on { background:#4fe070; color:#0b0b11; box-shadow:0 -2px 0 0 #4fe070,0 2px 0 0 #4fe070,-2px 0 0 0 #4fe070,2px 0 0 0 #4fe070; }
+  .adm-btn.wide { width:calc(100% - 6px); margin:0 3px; padding:12px; background:#4fe070; color:#0b0b11; }
+  .adm-btn.small { padding:6px 8px; }
+  .adm-btn.on { background:#4fe070; color:#0b0b11; box-shadow:0 -2px 0 0 #4fe070,0 2px 0 0 #4fe070,-2px 0 0 0 #4fe070,2px 0 0 0 #4fe070; }
+  .adm-btn.off { opacity:0.35; cursor:default; }
+  .adm-btn.danger { color:var(--warn); }
+  .adm-sec { font-family:var(--px); font-size:8px; color:#4fe070; text-transform:uppercase; margin:16px 3px 10px; }
+  .adm-grid { display:grid; grid-template-columns:repeat(6,1fr); gap:10px; margin:0 3px; }
+  .adm-grid.c3 { grid-template-columns:repeat(3,1fr); }
+  .adm-grid.c2 { grid-template-columns:repeat(2,1fr); }
+  .adm-note { font-family:var(--body); font-size:17px; color:var(--dim); margin:8px 3px 0; }
 </style>
 </head>
 <body>
@@ -378,9 +400,9 @@
   <div class="ctrl-row"><span class="ctrl-desc">Dash (5s cooldown)</span><span class="ctrl-key">Shift / K</span></div>
   <div class="ctrl-row"><span class="ctrl-desc">Stomp Enemy</span><span class="ctrl-key">Land on top</span></div>
   <div class="ctrl-row"><span class="ctrl-desc">Exit / Pause</span><span class="ctrl-key">Pause button</span></div>
-  <div class="ctrl-row"><span class="ctrl-desc">Level Warp</span><span class="ctrl-key">Ctrl+3</span></div>
-  <div class="ctrl-row"><span class="ctrl-desc">Kill Boss</span><span class="ctrl-key">Ctrl+6</span></div>
-  <div class="ctrl-row"><span class="ctrl-desc">Max Lives</span><span class="ctrl-key">Ctrl+7</span></div>
+  <div class="ctrl-row"><span class="ctrl-desc">Admin panel (password)</span><span class="ctrl-key">Ctrl+3</span></div>
+  <div class="ctrl-row"><span class="ctrl-desc">Kill Boss (admin)</span><span class="ctrl-key">Ctrl+6</span></div>
+  <div class="ctrl-row"><span class="ctrl-desc">Max Lives (admin)</span><span class="ctrl-key">Ctrl+7</span></div>
   <div class="ctrl-row"><span class="ctrl-desc">Fullscreen</span><span class="ctrl-key">Ctrl+F / F11</span></div>
   <br><button class="settings-close" onclick="document.getElementById('controls-modal').classList.remove('open')">Close</button>
 </div></div>
@@ -395,7 +417,7 @@
       (function(){
         const mobile = ('ontouchstart' in window) || navigator.maxTouchPoints > 0;
         document.getElementById('instructions').innerHTML = mobile
-          ? 'Tap ◀ ▶ to move, ▲ to jump, » to dash &nbsp;|&nbsp; Stomp the ghosts<br>Reach the gate at the end of each level &nbsp;|&nbsp; Every level has its own boss'
+          ? 'Tap ◀ ▶ to move, ▲ to jump, » to dash &nbsp;|&nbsp; Stomp the bots<br>Reach the gate at the end of each level &nbsp;|&nbsp; Every level has its own boss'
           : 'Arrows or WASD to move and jump, Shift to dash &nbsp;|&nbsp; Stomp the ghosts<br>Reach the gate at the end of each level &nbsp;|&nbsp; Every level has its own boss';
       })();
     </script>
@@ -450,10 +472,20 @@
 </div></div>
 
 <div id="cheat-modal"><div id="cheat-box">
-  <h2>Level warp</h2>
-  <div class="cheat-sub">CTRL + 3 &nbsp;|&nbsp; CLICK = LEVEL &nbsp;|&nbsp; SHIFT+CLICK = BOSS</div>
-  <div class="cheat-grid" id="cheat-grid"></div>
-  <button id="cheat-cancel" onclick="closeCheat()">Cancel</button>
+  <div id="admin-login">
+    <h2>Admin access</h2>
+    <div class="cheat-sub">ENTER THE ADMIN PASSWORD</div>
+    <input id="admin-pass" type="password" autocomplete="off" spellcheck="false" placeholder="password" onkeydown="if(event.key==='Enter')adminSubmit()">
+    <div id="admin-err"></div>
+    <button class="adm-btn wide" onclick="adminSubmit()">Unlock</button>
+    <button class="settings-close" onclick="closeCheat()">Cancel</button>
+  </div>
+  <div id="admin-panel" style="display:none;">
+    <div class="adm-head"><h2>Admin</h2><button class="adm-btn small" onclick="adminLock()">Lock</button></div>
+    <div class="adm-tabs" id="adm-tabs"></div>
+    <div id="adm-body"></div>
+    <button class="settings-close" onclick="closeCheat()">Close</button>
+  </div>
 </div></div>
 
 <script>
@@ -2279,6 +2311,7 @@ function tickPowerups() {
   if (!Game.state.activePowerups) return;
   Game.state.activePowerups.forEach(a => a.remaining--);
   Game.state.activePowerups = Game.state.activePowerups.filter(a => a.remaining > 0);
+  if (Object.values(Game.admin.inf).some(Boolean)) adminApplyInf();
   updatePowerupBar();
 }
 
@@ -2368,7 +2401,7 @@ function update() {
 
   // ── dash ──
   if (p.vx) p.facing = Math.sign(p.vx);
-  if (p.dashCd > 0) p.dashCd--;
+  if (Game.admin.infDash) p.dashCd = 0; else if (p.dashCd > 0) p.dashCd--;
   const wantDash = Game.keys['ShiftLeft'] || Game.keys['ShiftRight'] || Game.keys['KeyK'];
   if (wantDash && !Game.keys['_dashHeld'] && !(p.dashT > 0) && !(p.dashCd > 0)) {
     p.dashT = CONFIG.DASH_FRAMES; p.dashDir = p.vx ? Math.sign(p.vx) : (p.facing || 1);
@@ -2563,6 +2596,11 @@ function update() {
 
 function loseLife(reason) {
   if (!Game.state || !Game.animId) return;
+  if (Game.admin.god) {                                   // admin god mode: no damage
+    const gp = Game.state.player;
+    if (reason === 'fall' || reason === 'spike') { const sp = Game.state.lastSafe; gp.x = sp ? sp.x : 60; gp.y = sp ? sp.y : H - 80; gp.vx = 0; gp.vy = 0; updateCamera(Game.state, true); }
+    gp.invincible = Math.max(gp.invincible, 30); return;
+  }
   triggerShake(10, 20); triggerHitstop(5);
   const p = Game.state.player;
   spawnParticles(p.x+p.w/2, p.y+p.h/2, '#ff3e6c', 16);
@@ -2633,6 +2671,7 @@ function showOverlay(html) {
 }
 
 function gameOver() {
+  document.getElementById('combo-display').style.opacity = 0;
   // Re-init audio so sfxHit can play on the fresh context
   initAudio();
   sfxHit();
@@ -2640,18 +2679,45 @@ function gameOver() {
   const isNewHS = checkHighScore(score);
   mergeSessionStats(); Game.resetSession();
   const existing = getSave(Game.activeSlot);
-  if (existing && !existing.completed) {
-    setSave(Game.activeSlot, {level:1,score:0,lives:3,date:existing.date,completed:false,bestScore:Math.max(score,existing.bestScore||0)});
-  }
+  if (existing && !existing.completed) setSave(Game.activeSlot, Object.assign({}, existing, { bestScore: Math.max(score, existing.bestScore || 0) }));
   clearInterval(Game.autoSaveId);
+  const st = Game.state;
+  const hint = !st ? '' : (st.level === 11 || st.mode === 'arena') ? 'THE BOSS FIGHT RESTARTS' : st.checkpoint ? 'FROM YOUR LAST CHECKPOINT' : 'FROM THE START OF THE LEVEL';
   showOverlay(
     '<h1 style="color:#ff3e6c;text-shadow:4px 4px 0 #000;">GAME OVER</h1>' +
     '<div style="font-family:var(--px);font-size:16px;color:#ff3e6c;margin-bottom:0.5rem;letter-spacing:0.1em;">SCORE: '+score+'</div>' +
-    '<div class="tagline" style="margin-bottom:0.5rem;">LEVEL '+level+' REACHED</div>' +
+    '<div class="tagline" style="margin-bottom:1.2rem;">LEVEL '+level+' REACHED</div>' +
     (isNewHS?'<div style="font-family:var(--px);font-size:8px;color:#ff0;letter-spacing:0.15em;margin-bottom:1rem;">* NEW HIGH SCORE *</div>':'')+
-    '<button class="start-btn" onclick="startFresh()" style="border-color:#ff3e6c;color:#ff3e6c;margin-bottom:0.6rem;">TRY AGAIN</button>' +
-    '<button class="start-btn" onclick="doLeave()" style="border-color:rgba(255,255,255,0.2);color:rgba(255,255,255,0.4);font-size:8px;padding:0.5rem 1.5rem;">BACK TO MENU</button>'
+    (st ? '<button class="start-btn" onclick="respawn()">RESPAWN</button>' +
+          '<div class="tagline" style="margin:12px 0 18px;color:#9a98a8;">'+hint+'</div>' : '') +
+    '<button class="mode-btn active" onclick="doLeave()">BACK TO MENU</button>'
   );
+}
+
+// Come back after running out of hearts: same level, last checkpoint, fresh hearts.
+function respawn() {
+  initAudio(); if (Audio.ctx && Audio.ctx.state === 'suspended') Audio.ctx.resume();
+  const s = Game.state; if (!s) { doLeave(); return; }
+  document.getElementById('overlay').style.display = 'none';
+  Game.keys = {};
+  s.lives = 3; s.enemyShots = []; s.particles = []; s.popups = []; s.activePowerups = [];
+  document.getElementById('powerup-bar').innerHTML = '';
+  const p = s.player;
+  p.dead = false; p.deathTimer = 0; p.vx = 0; p.vy = 0; p.trail = []; p.invincible = 180; p.dashT = 0; p.dashCd = 0;
+  if (s.level !== 11 && s.mode === 'arena') {
+    enterArena();                                         // boss fight starts over at full health
+  } else if (s.level === 11) {
+    p.x = 60; p.y = H - 80;
+  } else {
+    const cp = s.checkpoint;
+    p.x = cp ? cp.x - p.w / 2 : 60; p.y = cp ? cp.y - p.h - 2 : H - 80;
+    s.lastSafe = { x: p.x, y: p.y }; s.safeHist = [];
+    updateCamera(s, true);
+  }
+  updateHUD(); showDpad();
+  document.getElementById('exit-btn').style.display = 'block'; showFsBtn();
+  Game.resetSession(); startAutoSave(); startMusic('normal');
+  if (!Game.animId) loop();
 }
 
 function showVictory() {
@@ -3619,6 +3685,7 @@ function draw() {
 
 function loop() {
   if (!Game.state) return;
+  if (Game.adminPaused) { draw(); Game.animId = requestAnimationFrame(loop); return; }
   if (Game.hitstop > 0) { Game.hitstop--; draw(); }
   else { update(); sendMpState(); draw(); }
   Game.animId = requestAnimationFrame(loop);
@@ -3628,6 +3695,7 @@ function loop() {
 // INPUT
 // ═══════════════════════════════════════════════════════════════
 window.addEventListener('keydown', e => {
+  if (adminTyping()) return;
   Game.keys[e.code] = true;
   if (['ArrowUp','ArrowDown','ArrowLeft','ArrowRight','Space'].includes(e.code)) e.preventDefault();
 });
@@ -3692,20 +3760,137 @@ window.addEventListener('keydown', e => {
 // ═══════════════════════════════════════════════════════════════
 // ADMIN WARP (Ctrl+3/6/7)
 // ═══════════════════════════════════════════════════════════════
+// Client-side only: anyone who views the source can read this. Change it to whatever you like.
+const ADMIN_PASS = 'neon26';
+Game.admin = { unlocked: false, god: false, infDash: false, inf: {}, tab: 'teleport' };
+function adminTyping() { const m = document.getElementById('cheat-modal'); return m && m.classList.contains('open') && document.activeElement && document.activeElement.tagName === 'INPUT'; }
+
 function openCheat() {
-  const grid=document.getElementById('cheat-grid'); grid.innerHTML='';
-  const currentLvl=Game.state?Game.state.level:0;
-  for (let i=1;i<=11;i++) {
-    const def=i===11?HACKER_LEVEL:LEVEL_DEFS[i-1];
-    const btn=document.createElement('button');
-    btn.className='cheat-lvl-btn'+(i===currentLvl?' current':'');
-    btn.innerHTML=i+'<br><span style="font-size:8px;opacity:0.6;letter-spacing:0.05em;">'+(def?def.name.split(' ')[0]:'???')+'</span>';
-    btn.onclick=(e)=>warpToLevel(i, e.shiftKey);
-    grid.appendChild(btn);
-  }
   document.getElementById('cheat-modal').classList.add('open');
+  if (Game.state && Game.animId) Game.adminPaused = true;            // freeze the game while the panel is open
+  if (Game.admin.unlocked) showAdminPanel();
+  else {
+    document.getElementById('admin-login').style.display = ''; document.getElementById('admin-panel').style.display = 'none';
+    const i = document.getElementById('admin-pass'); i.value = ''; document.getElementById('admin-err').textContent = ''; setTimeout(() => i.focus(), 30);
+  }
 }
-function closeCheat() { document.getElementById('cheat-modal').classList.remove('open'); }
+function closeCheat() {
+  document.getElementById('cheat-modal').classList.remove('open'); Game.adminPaused = false;
+  if (document.activeElement && document.activeElement.blur) document.activeElement.blur();
+  Game.keys = {};
+}
+function adminSubmit() {
+  const i = document.getElementById('admin-pass');
+  if (i.value === ADMIN_PASS) { Game.admin.unlocked = true; i.value = ''; showAdminPanel(); }
+  else { document.getElementById('admin-err').textContent = 'WRONG PASSWORD'; i.value = ''; i.focus(); }
+}
+function adminLock() { Game.admin.unlocked = false; closeCheat(); adminToast('LOCKED'); }
+function showAdminPanel() {
+  document.getElementById('admin-login').style.display = 'none'; document.getElementById('admin-panel').style.display = '';
+  renderAdmin();
+}
+function adminTab(t) { Game.admin.tab = t; renderAdmin(); }
+
+function renderAdmin() {
+  const A = Game.admin, s = Game.state;
+  const tabs = [['teleport', 'Teleport'], ['powerups', 'Powerups'], ['player', 'Player'], ['boss', 'Boss / level']];
+  document.getElementById('adm-tabs').innerHTML = tabs.map(t => '<button class="adm-tab' + (A.tab === t[0] ? ' on' : '') + '" onclick="adminTab(\'' + t[0] + '\')">' + t[1] + '</button>').join('');
+  const cur = s ? s.level : 0, run = s && s.mode === 'run' && s.gate;
+  let h = '';
+  if (A.tab === 'teleport') {
+    h += '<div class="adm-sec">Level start</div><div class="adm-grid">';
+    for (let i = 1; i <= 11; i++) h += '<button class="adm-btn' + (i === cur ? ' on' : '') + '" onclick="adminWarp(' + i + ',false)">' + i + '</button>';
+    h += '</div><div class="adm-sec">Boss arena</div><div class="adm-grid">';
+    for (let i = 1; i <= 11; i++) h += '<button class="adm-btn" onclick="adminWarp(' + i + ',true)">' + i + '</button>';
+    h += '</div><div class="adm-sec">In this level</div><div class="adm-grid c3">';
+    [['Start', "'start'"], ['25%', 0.25], ['50%', 0.5], ['75%', 0.75], ['Boss gate', "'gate'"], ['Prev checkpoint', "'prevcp'"], ['Next checkpoint', "'nextcp'"]].forEach(b => { h += '<button class="adm-btn' + (run ? '' : ' off') + '" onclick="adminTp(' + b[1] + ')">' + b[0] + '</button>'; });
+    h += '</div>' + (run ? '' : '<div class="adm-note">Positions only work in the scrolling part of levels 1-10.</div>');
+  } else if (A.tab === 'powerups') {
+    h += '<div class="adm-sec">Infinite powerups (click to toggle)</div><div class="adm-grid c3">';
+    POWERUP_TYPES.forEach(t => { h += '<button class="adm-btn' + (A.inf[t.id] ? ' on' : '') + '" onclick="adminInf(\'' + t.id + '\')">' + pixIcon(PU_ICONS[t.id], { '#': A.inf[t.id] ? '#0b0b11' : t.color }, 2) + ' ' + t.label + '</button>'; });
+    h += '</div><div class="adm-grid c2" style="margin-top:14px"><button class="adm-btn" onclick="adminInf(\'all\')">All on</button><button class="adm-btn danger" onclick="adminInf(\'none\')">All off</button></div>';
+    h += '<div class="adm-note">On = the powerup never runs out, through levels, respawns and boss fights.</div>';
+  } else if (A.tab === 'player') {
+    h += '<div class="adm-sec">Toggles</div><div class="adm-grid c2">' +
+      '<button class="adm-btn' + (A.god ? ' on' : '') + '" onclick="adminToggle(\'god\')">God mode</button>' +
+      '<button class="adm-btn' + (A.infDash ? ' on' : '') + '" onclick="adminToggle(\'infDash\')">Infinite dash</button></div>';
+    h += '<div class="adm-sec">Give</div><div class="adm-grid c3">' +
+      '<button class="adm-btn" onclick="adminGive(\'heart\')">+1 heart</button>' +
+      '<button class="adm-btn" onclick="adminGive(\'hearts\')">10 hearts</button>' +
+      '<button class="adm-btn" onclick="adminGive(\'score\')">+1000 score</button></div>';
+    h += '<div class="adm-note">God mode: no damage. Pits and spikes still put you back on safe ground.</div>';
+  } else {
+    const b = s && s.boss && !s.boss.dead ? s.boss : null;
+    h += '<div class="adm-sec">Boss' + (b ? ' - HP ' + b.hp + '/' + (b.maxHp || CONFIG.BOSS_MAX_HP) : ' - none active') + '</div><div class="adm-grid c3">' +
+      '<button class="adm-btn danger' + (b ? '' : ' off') + '" onclick="adminBoss(\'kill\')">Kill</button>' +
+      '<button class="adm-btn' + (b ? '' : ' off') + '" onclick="adminBoss(\'hit\')">-1 HP</button>' +
+      '<button class="adm-btn' + (b ? '' : ' off') + '" onclick="adminBoss(\'heal\')">Full HP</button></div>';
+    h += '<div class="adm-sec">Level</div><div class="adm-grid c3">' +
+      '<button class="adm-btn" onclick="adminLevel(\'skip\')">Skip level</button>' +
+      '<button class="adm-btn" onclick="adminLevel(\'restart\')">Restart level</button>' +
+      '<button class="adm-btn" onclick="adminLevel(\'boss\')">Go to boss</button></div>';
+  }
+  document.getElementById('adm-body').innerHTML = h;
+}
+
+function adminWarp(lvl, toBoss) {
+  warpToLevel(lvl, toBoss);
+  if (lvl === 11 && toBoss && Game.state && Game.state.coins) Game.state.coins.forEach(c => c.collected = true);   // hacker boss spawns once the orbs are gone
+}
+function adminTp(t) {
+  const s = Game.state;
+  if (!s || s.mode !== 'run' || !s.gate) { adminToast('Only in the scrolling part of a level'); return; }
+  const p = s.player; let x;
+  if (t === 'gate') x = s.gate.x - 160; else if (t === 'start') x = 90; else if (typeof t === 'number') x = s.gate.x * t;
+  else {
+    const cps = s.checkpoints.slice().sort((a, b) => a.x - b.x);
+    const c = t === 'nextcp' ? cps.find(c => c.x > p.x + 40) : cps.slice().reverse().find(c => c.x < p.x - 40);
+    if (!c) { adminToast('No checkpoint that way'); return; }
+    x = c.x;
+  }
+  const under = s.platforms.filter(q => !q.move && x >= q.x + 4 && x <= q.x + q.w - 4).sort((a, b) => b.y - a.y)[0]
+    || s.platforms.filter(q => !q.move).sort((a, b) => Math.abs(a.x + a.w / 2 - x) - Math.abs(b.x + b.w / 2 - x))[0];
+  p.x = under ? Math.max(under.x + 6, Math.min(under.x + under.w - p.w - 6, x - p.w / 2)) : x; p.y = (under ? under.y : H - 20) - p.h - 2;
+  p.vx = 0; p.vy = 0; p.invincible = Math.max(p.invincible, 60); p.trail = [];
+  s.lastSafe = { x: p.x, y: p.y }; s.safeHist = []; updateCamera(s, true);
+  closeCheat(); adminToast('TELEPORTED');
+}
+function adminApplyInf() {
+  const s = Game.state; if (!s) return;
+  s.activePowerups = s.activePowerups || [];
+  POWERUP_TYPES.forEach(t => {
+    const on = Game.admin.inf[t.id], a = s.activePowerups.find(x => x.typeId === t.id);
+    if (on) { if (a) { a.remaining = a.total; } else s.activePowerups.push({ typeId: t.id, remaining: t.dur, total: t.dur, admin: true }); }
+    else if (a && a.admin) s.activePowerups = s.activePowerups.filter(x => x !== a);
+  });
+  updatePowerupBar();
+}
+function adminInf(id) {
+  const A = Game.admin;
+  if (id === 'all') POWERUP_TYPES.forEach(t => A.inf[t.id] = true);
+  else if (id === 'none') POWERUP_TYPES.forEach(t => A.inf[t.id] = false);
+  else A.inf[id] = !A.inf[id];
+  adminApplyInf(); renderAdmin();
+}
+function adminToggle(k) { Game.admin[k] = !Game.admin[k]; renderAdmin(); adminToast((k === 'god' ? 'GOD MODE ' : 'INFINITE DASH ') + (Game.admin[k] ? 'ON' : 'OFF')); }
+function adminGive(w) {
+  const s = Game.state; if (!s) return;
+  if (w === 'heart') s.lives = Math.min(10, s.lives + 1); else if (w === 'hearts') s.lives = 10; else s.score += 1000;
+  updateHUD(); spawnParticles(s.player.x + 9, s.player.y, '#0f0', 14); adminToast(w === 'score' ? '+1000 SCORE' : 'HEARTS ' + s.lives);
+}
+function adminBoss(act) {
+  const s = Game.state, b = s && s.boss;
+  if (!b || b.dead) { adminToast('No boss active'); return; }
+  if (act === 'kill') { b.hp = 0; killBoss(b, s); adminToast('BOSS OBLITERATED'); closeCheat(); }
+  else if (act === 'hit') { b.hp--; b.flash = 20; if (b.hp <= 0) { killBoss(b, s); closeCheat(); } updateBossHUD(); renderAdmin(); }
+  else { b.hp = b.maxHp || CONFIG.BOSS_MAX_HP; updateBossHUD(); renderAdmin(); }
+}
+function adminLevel(act) {
+  const s = Game.state; if (!s) { adminToast('Start a game first'); return; }
+  if (act === 'skip') { if (s.level >= 10) { adminToast('Last level'); return; } closeCheat(); advanceLevel(); }
+  else if (act === 'restart') warpToLevel(s.level, false);
+  else if (s.level <= 10) warpToLevel(s.level, true); else adminWarp(11, true);
+}
 
 function warpToLevel(lvl, toBoss) {
   closeCheat();
@@ -3728,29 +3913,17 @@ function warpToLevel(lvl, toBoss) {
 
 window.addEventListener('keydown', e => {
   if (e.key==='3'&&(e.ctrlKey||e.metaKey)){e.preventDefault();openCheat();}
-  if (e.key==='6'&&(e.ctrlKey||e.metaKey)){
+  if ((e.key==='6'||e.key==='7')&&(e.ctrlKey||e.metaKey)) {
     e.preventDefault();
-    if (Game.state&&Game.state.boss&&!Game.state.boss.dead) {
-      const elapsed=Game.state.bossStartTime?(performance.now()-Game.state.bossStartTime)/1000:999;
-      const hackerUnlocked=elapsed<=10&&!Game.state.hackerTriggered&&Game.state.level===10;
-      Game.state.boss.hp=0; Game.state.boss.dead=true;
-      Game.state.boss.deathTimer=hackerUnlocked?120:200; Game.state.boss.deathTimerMax=Game.state.boss.deathTimer;
-      Game.state.boss.hackerUnlock=hackerUnlocked; Game.state.score+=CONFIG.SCORE_BOSS_KILL; updateHUD();
-      document.getElementById('boss-hud').style.display='none';
-      for(let i=0;i<8;i++) setTimeout(()=>{if(Game.state&&Game.state.boss)spawnParticles(Game.state.boss.x+Math.random()*Game.state.boss.w,Game.state.boss.y+Math.random()*Game.state.boss.h,(hackerUnlocked?['#0f0','#0ff','#fff']:['#f33','#f80','#ff0','#fff','#0ff'])[Math.floor(Math.random()*5)],20);},i*100);
-      adminToast(hackerUnlocked?'⚡ HACKER MODE UNLOCKED':'☠ BOSS OBLITERATED');
-    } else adminToast('No boss active');
-  }
-  if (e.key==='7'&&(e.ctrlKey||e.metaKey)){
-    e.preventDefault();
-    if (Game.state){Game.state.lives=10;updateHUD();adminToast('♦ LIVES MAXED TO 10');spawnParticles(Game.state.player.x+9,Game.state.player.y,'#0f0',16);}
+    if (!Game.admin.unlocked) { adminToast('Locked - press Ctrl+3'); return; }
+    if (e.key==='6') adminBoss('kill'); else adminGive('hearts');
   }
   if (e.key==='Escape') {
     if (document.getElementById('cheat-modal').classList.contains('open')) closeCheat();
     else if (document.getElementById('exit-modal').classList.contains('open')) closeExitModal();
     else if (Game.state && Game.animId) openExitModal();
   }
-  if ((e.key==='p'||e.key==='P') && Game.state && Game.animId) openExitModal();
+  if ((e.key==='p'||e.key==='P') && Game.state && Game.animId && !adminTyping() && !document.getElementById('cheat-modal').classList.contains('open')) openExitModal();
 });
 
 function adminToast(msg) {
