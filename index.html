@@ -395,7 +395,7 @@
 <div id="portrait-msg">
   <div class="icon" style="font-size:1rem;animation:none">↻</div>
   <div style="font-size:1.2rem;font-weight:900;letter-spacing:0.15em;">Turn your phone sideways</div>
-  <p>Zeniphor needs landscape</p>
+  <p>Neon Run needs landscape</p>
 </div>
 <div id="game-root"><div id="scale-wrap">
 <div id="hud">
@@ -458,7 +458,7 @@
 <div id="canvas-wrap">
   <canvas id="c" width="800" height="440"></canvas>
   <div id="overlay">
-    <h1>ZENIPHOR</h1>
+    <h1>Neon Run</h1>
     <div class="tagline">survive the grid</div>
     <div class="instructions" id="instructions"></div>
     <script>
@@ -2663,7 +2663,7 @@ function updateHUD() {
   document.getElementById('hud-score').textContent = s.score;
   document.getElementById('hud-level').textContent = s.level;
   document.getElementById('hud-world-label').textContent = ['α','β','γ'][Game.activeSlot] || '';
-  document.title = 'ZENIPHOR — LVL ' + s.level + (s.name ? ' · ' + s.name : '');
+  document.title = 'Neon Run — LVL ' + s.level + (s.name ? ' · ' + s.name : '');
   const curStats = getStats();
   if ((curStats.maxLevel||0) < s.level) updateStats({maxLevel: s.level});
   (function(){ const hp = pixIcon(HEART_ROWS,{O:'#7a1230',P:'#ffd0dc',R:'#ff3e6c'},3);
@@ -4632,7 +4632,7 @@ function exitLeaveNoSave()  { if(!confirm('Leave without saving? Progress since 
 
 function doLeave() {
   cancelAnimationFrame(Game.animId); Game.animId=null; stopMusic(); clearInterval(Game.autoSaveId);
-  Game.state=null; MP.p2=null; document.title='ZENIPHOR';
+  Game.state=null; MP.p2=null; document.title='Neon Run';
   document.getElementById('exit-btn').style.display='none';
   document.getElementById('boss-hud').style.display='none';
   document.getElementById('powerup-bar').innerHTML='';
@@ -4642,7 +4642,7 @@ function doLeave() {
   ov.style.cssText='display:flex;flex-direction:column;align-items:center;justify-content:center;position:absolute;inset:0;background:#0b0b11;';
   const isMobile=('ontouchstart' in window)||navigator.maxTouchPoints>0;
   ov.innerHTML=`
-    <h1>ZENIPHOR</h1>
+    <h1>Neon Run</h1>
     <div class="tagline">survive the grid</div>
     <div class="instructions">${isMobile?'Tap ◀ ▶ to move, ▲ to jump, » to dash &nbsp;|&nbsp; Stomp the bots<br>Reach the gate at the end of each level &nbsp;|&nbsp; Every level has its own boss':'Arrows or WASD to move and jump, Shift to dash &nbsp;|&nbsp; Stomp the bots<br>Reach the gate at the end of each level &nbsp;|&nbsp; Every level has its own boss'}</div>
     <div id="save-section"><div class="save-label">pick a save slot</div><div class="save-slots" id="save-slots"></div></div>
