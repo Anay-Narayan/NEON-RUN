@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Neon Run</title>
+<title>NEON RUN</title>
 <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
 <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=VT323&family=Silkscreen:wght@400;700&display=swap" rel="stylesheet">
 <style>
@@ -458,7 +458,7 @@
 <div id="canvas-wrap">
   <canvas id="c" width="800" height="440"></canvas>
   <div id="overlay">
-    <h1>Neon Run</h1>
+    <h1>NEON RUN</h1>
     <div class="tagline">survive the grid</div>
     <div class="instructions" id="instructions"></div>
     <script>
@@ -927,7 +927,7 @@ function handleMpData(data) {
         Game.state = s;
         MP.p2LevelReady = false;
         updateHUD(); sfxLevelUp();
-        setTimeout(() => startMusic('normal'), 300);
+        musicLater('normal', 300);
       }
       break;
     case 'boss':
@@ -984,6 +984,26 @@ function nf(name) {
   return 440 * Math.pow(2, (semi-69)/12);
 }
 
+// Drums are synthesized once into short sample buffers; playing a hit is then just one cheap node.
+const DRUM_TRIM = { kick:1, taiko:1, snare:0.9, clap:0.8, hatC:0.45, hatO:0.4, crash:0.5 };
+function makeDrums(ctx) {
+  const sr = ctx.sampleRate, D = {};
+  const mk = (sec, fn) => { const n = Math.floor(sr*sec), b = ctx.createBuffer(1, n, sr); fn(b.getChannelData(0), n); return b; };
+  const hp = (d, a) => { let px = 0, py = 0; for (let i = 0; i < d.length; i++) { const x = d[i]; py = a*(py + x - px); px = x; d[i] = py; } };
+  D.kick  = mk(0.38, (d, n) => { let ph = 0; for (let i = 0; i < n; i++) { const t = i/sr; ph += 6.2832*(42 + 120*Math.exp(-t*28))/sr; d[i] = Math.sin(ph)*Math.exp(-t*8.5) + (i < 80 ? (Math.random()*2-1)*0.45*(1 - i/80) : 0); } });
+  D.taiko = mk(0.6,  (d, n) => { let ph = 0; for (let i = 0; i < n; i++) { const t = i/sr; ph += 6.2832*(38 + 62*Math.exp(-t*14))/sr; d[i] = Math.sin(ph)*Math.exp(-t*5.5) + (Math.random()*2-1)*Math.exp(-t*30)*0.3; } });
+  D.snare = mk(0.22, (d, n) => { for (let i = 0; i < n; i++) d[i] = (Math.random()*2-1)*Math.exp(-i/sr*22)*0.8; hp(d, 0.75); for (let i = 0; i < n; i++) { const t = i/sr; d[i] = Math.round((d[i] + Math.sin(6.2832*190*t)*Math.exp(-t*30)*0.5)*6)/6; } });   // slightly bit-crushed
+  D.clap  = mk(0.22, (d, n) => { for (let i = 0; i < n; i++) { const t = i/sr; let e = t > 0.024 ? Math.exp(-(t - 0.024)*28)*0.8 : 0; for (let k = 0; k < 3; k++) { const dt = t - k*0.012; if (dt >= 0) e = Math.max(e, Math.exp(-dt*160)); } d[i] = (Math.random()*2-1)*e; } hp(d, 0.55); });
+  D.hatC  = mk(0.07, (d, n) => { for (let i = 0; i < n; i++) d[i] = (Math.random()*2-1)*Math.exp(-i/sr*85); hp(d, 0.85); });
+  D.hatO  = mk(0.32, (d, n) => { for (let i = 0; i < n; i++) d[i] = (Math.random()*2-1)*Math.exp(-i/sr*13); hp(d, 0.85); });
+  D.crash = mk(1.5,  (d, n) => { for (let i = 0; i < n; i++) d[i] = (Math.random()*2-1)*Math.exp(-i/sr*3.2); hp(d, 0.8); });
+  return D;
+}
+function vDrum(name, t0, dest, vol) {
+  const b = Audio.drums && Audio.drums[name]; if (!b) return;
+  const s = Audio.ctx.createBufferSource(), g = Audio.ctx.createGain(); s.buffer = b; g.gain.value = vol*(DRUM_TRIM[name] || 1); s.connect(g); g.connect(dest); s.start(t0);
+}
+
 function initAudio() {
   if (Audio.ctx) return;
   const ctx = Audio.ctx = new (window.AudioContext || window.webkitAudioContext)();
@@ -996,6 +1016,7 @@ function initAudio() {
   Audio.noiseBuf = ctx.createBuffer(1, sr*2, sr);
   { const d = Audio.noiseBuf.getChannelData(0); for (let i = 0; i < d.length; i++) d[i] = Math.random()*2-1; }
   Audio._crush = {};
+  Audio.drums = makeDrums(ctx);
 
   // dark cave reverb: noise that gets duller as it fades
   const mkIR = (secs, dark) => {
@@ -1036,11 +1057,12 @@ function makeMusicMaster() {
   Audio.musicMaster = m;
 }
 
-function crushNode(levels) {
+function crushTo(dest, levels) {      // shared bit-crusher feeding `dest` (created once, reused by every note)
+  const key = '_crush' + levels; if (dest[key]) return dest[key];
   const ws = Audio.ctx.createWaveShaper();
   let cv = Audio._crush[levels];
   if (!cv) { cv = new Float32Array(2049); for (let i = 0; i < 2049; i++) { const x = i/1024 - 1; cv[i] = Math.round(x*levels)/levels; } Audio._crush[levels] = cv; }
-  ws.curve = cv; return ws;
+  ws.curve = cv; ws.connect(dest); dest[key] = ws; return ws;
 }
 
 // ── basic building blocks ──
@@ -1130,36 +1152,30 @@ function vStab(f, t0, dur, vol, dest, cut=2400) {
 }
 // bit-crushed digital blip
 function vBlip(f, t0, dur, vol, dest, levels=10) {
-  const c = Audio.ctx, o = c.createOscillator(), ws = crushNode(levels), g = c.createGain();
+  const c = Audio.ctx, o = c.createOscillator(), g = c.createGain();
   o.type = 'triangle'; o.frequency.value = f;
   g.gain.setValueAtTime(0.0001, t0); g.gain.linearRampToValueAtTime(vol, t0+0.004); g.gain.exponentialRampToValueAtTime(0.0001, t0+dur);
-  o.connect(ws); ws.connect(g); g.connect(dest); o.start(t0); o.stop(t0+dur+0.02);
+  o.connect(g); g.connect(crushTo(dest, levels)); o.start(t0); o.stop(t0+dur+0.02);
 }
 // crushed glitch burst
 function vGlitch(t0, dest, vol) {
-  const c = Audio.ctx, src = c.createBufferSource(), bp = c.createBiquadFilter(), ws = crushNode(5), g = c.createGain(), d = 0.03 + Math.random()*0.05;
+  const c = Audio.ctx, src = c.createBufferSource(), bp = c.createBiquadFilter(), g = c.createGain(), d = 0.03 + Math.random()*0.05;
   src.buffer = Audio.noiseBuf; bp.type = 'bandpass'; bp.frequency.value = 1200 + Math.random()*7000; bp.Q.value = 6;
   g.gain.setValueAtTime(vol, t0); g.gain.setValueAtTime(0.0001, t0+d);
-  src.connect(bp); bp.connect(ws); ws.connect(g); g.connect(dest); src.start(t0, Math.random()*1.5, d+0.01);
+  src.connect(bp); bp.connect(g); g.connect(crushTo(dest, 5)); src.start(t0, Math.random()*1.5, d+0.01);
 }
 // gritty digital bass (insanity)
 function vBass(f, t0, dur, vol, dest) {
-  const c = Audio.ctx, g = c.createGain(), lp = c.createBiquadFilter(), ws = crushNode(20);
+  const c = Audio.ctx, g = c.createGain(), lp = c.createBiquadFilter();
   lp.type = 'lowpass'; lp.Q.value = 4; lp.frequency.setValueAtTime(900, t0); lp.frequency.exponentialRampToValueAtTime(180, t0+dur);
   g.gain.setValueAtTime(0.0001, t0); g.gain.linearRampToValueAtTime(vol, t0+0.006); g.gain.exponentialRampToValueAtTime(0.0001, t0+dur);
   [['sawtooth', 0, 0.8], ['square', -1200, 0.5]].forEach(([ty, dt, a]) => { const o = c.createOscillator(), og = c.createGain(); o.type = ty; o.frequency.value = f; o.detune.value = dt; og.gain.value = a; o.connect(og); og.connect(lp); o.start(t0); o.stop(t0+dur+0.03); });
-  lp.connect(ws); ws.connect(g); g.connect(dest);
+  lp.connect(g); g.connect(crushTo(dest, 20));
 }
 // drums
-function vKick(t0, dest, vol)  { makeSlide('sine', 130, 40, t0, 0.3, vol, dest); makeNoise(t0, 0.015, vol*0.5, dest, 3000); }
-function vTaiko(t0, dest, vol) { makeSlide('sine', 100, 38, t0, 0.55, vol, dest); makeNoise(t0, 0.22, vol*0.7, dest, 160); makeSlide('triangle', 200, 60, t0, 0.25, vol*0.35, dest); }
-function vSnare(t0, dest, vol) {
-  const c = Audio.ctx, src = c.createBufferSource(), bp = c.createBiquadFilter(), ws = crushNode(7), g = c.createGain();
-  src.buffer = Audio.noiseBuf; bp.type = 'bandpass'; bp.frequency.value = 2000; bp.Q.value = 0.8;
-  g.gain.setValueAtTime(vol, t0); g.gain.exponentialRampToValueAtTime(0.0001, t0+0.13);
-  src.connect(bp); bp.connect(ws); ws.connect(g); g.connect(dest); src.start(t0, Math.random()*1.5, 0.15);
-  makeSlide('triangle', 230, 120, t0, 0.1, vol*0.8, dest);
-}
+function vKick(t0, dest, vol)  { vDrum('kick', t0, dest, vol); }
+function vTaiko(t0, dest, vol) { vDrum('taiko', t0, dest, vol); }
+function vSnare(t0, dest, vol) { vDrum('snare', t0, dest, vol); }
 // drifting static / wind bed
 function vWind(t0, dur, vol, dest, fc) {
   const c = Audio.ctx, src = c.createBufferSource(), bp = c.createBiquadFilter(), g = c.createGain(), lfo = c.createOscillator(), lg = c.createGain();
@@ -1172,11 +1188,11 @@ function vWind(t0, dur, vol, dest, fc) {
 
 
 // supersaw pluck lead
-function vLead(f, t0, dur, vol, dest, cut=3500) {
+function vLead(f, t0, dur, vol, dest, cut=3500, det=[-14, 0, 14]) {
   const c = Audio.ctx, g = c.createGain(), lp = c.createBiquadFilter();
   lp.type = 'lowpass'; lp.Q.value = 1.2; lp.frequency.setValueAtTime(cut, t0); lp.frequency.exponentialRampToValueAtTime(700, t0+dur);
   g.gain.setValueAtTime(0.0001, t0); g.gain.linearRampToValueAtTime(vol, t0+0.004); g.gain.exponentialRampToValueAtTime(0.0001, t0+dur);
-  [-14, 0, 14].forEach(dt => { const o = c.createOscillator(); o.type = 'sawtooth'; o.frequency.value = f; o.detune.value = dt; o.connect(lp); o.start(t0); o.stop(t0+dur+0.03); });
+  det.forEach(dt => { const o = c.createOscillator(); o.type = 'sawtooth'; o.frequency.value = f; o.detune.value = dt; o.connect(lp); o.start(t0); o.stop(t0+dur+0.03); });
   lp.connect(g); g.connect(dest);
 }
 // sidechain-pumped pad: ducks on every beat like it's ducked by the kick
@@ -1199,15 +1215,15 @@ function vWobble(f, t0, dur, vol, dest, rate) {
 }
 // drum & bass reese bass
 function vReese(f, t0, dur, vol, dest) {
-  const c = Audio.ctx, g = c.createGain(), lp = c.createBiquadFilter(), ws = crushNode(24), lfo = c.createOscillator(), lg = c.createGain();
+  const c = Audio.ctx, g = c.createGain(), lp = c.createBiquadFilter(), lfo = c.createOscillator(), lg = c.createGain();
   lp.type = 'lowpass'; lp.Q.value = 3; lp.frequency.value = 650; lfo.frequency.value = 0.9; lg.gain.value = 260; lfo.connect(lg); lg.connect(lp.frequency);
   g.gain.setValueAtTime(0.0001, t0); g.gain.linearRampToValueAtTime(vol, t0+0.008); g.gain.setValueAtTime(vol, Math.max(t0+0.008, t0+dur-0.03)); g.gain.linearRampToValueAtTime(0.0001, t0+dur);
   [-34, -12, 12, 34].forEach(dt => { const o = c.createOscillator(); o.type = 'sawtooth'; o.frequency.value = f; o.detune.value = dt; o.connect(lp); o.start(t0); o.stop(t0+dur+0.03); });
-  lfo.start(t0); lfo.stop(t0+dur+0.03); lp.connect(ws); ws.connect(g); g.connect(dest);
+  lfo.start(t0); lfo.stop(t0+dur+0.03); lp.connect(g); g.connect(crushTo(dest, 24));
 }
-function vClap(t0, dest, vol) { makeNoise(t0, 0.012, vol, dest, 1500); makeNoise(t0+0.012, 0.012, vol, dest, 1500); makeNoise(t0+0.024, 0.14, vol, dest, 1300); }
-function vHat(t0, dest, vol, open) { makeNoise(t0, open ? 0.12 : 0.03, vol, dest, 9500); }
-function vCrash(t0, dest, vol) { makeNoise(t0, 1.3, vol, dest, 6500); makeNoise(t0, 0.9, vol*0.6, dest, 10000); }
+function vClap(t0, dest, vol)  { vDrum('clap', t0, dest, vol); }
+function vHat(t0, dest, vol, open) { vDrum(open ? 'hatO' : 'hatC', t0, dest, vol); }
+function vCrash(t0, dest, vol) { vDrum('crash', t0, dest, vol); }
 function vRiser(t0, dur, vol, dest) {
   const c = Audio.ctx, src = c.createBufferSource(), bp = c.createBiquadFilter(), g = c.createGain();
   src.buffer = Audio.noiseBuf; src.loop = true; bp.type = 'bandpass'; bp.Q.value = 2;
@@ -1232,98 +1248,99 @@ function sfxPowerup()    { if(!_sfxOK())return; const t=Audio.now(),d=Audio.sfxB
 function sfxBossDeath()  { if(!_sfxOK())return; const t=Audio.now(),d=Audio.sfxBus; for(let i=0;i<5;i++){ makeNoise(t+i*0.19,0.3,0.2,d,280+i*90); makeSlide('sine',220-i*28,22,t+i*0.19,0.5,0.3,d); vGlitch(t+i*0.19,d,0.07); } vSub(nf('A1'),t+0.65,1.4,0.35,d); vPad(['A3','E4','A4'].map(nf),t+0.8,3.0,0.04,d,900); }
 
 // ── MUSIC ──
+const MUS_N = {   // levels: house groove in A minor
+  chords: [['A3','C4','E4'],['F3','A3','C4'],['C4','E4','G4'],['B3','D4','G4'],['A3','C4','E4'],['F3','A3','C4'],['B3','D4','G4'],['G#3','B3','E4']],
+  roots:  ['A2','F2','C3','G2','A2','F2','G2','E2'],
+  riff: [[[0,'E5',0.75],[0.75,'E5',0.25],[1,'D5',0.5],[1.5,'C5',0.5],[2,'A4',1],[3,'C5',0.5],[3.5,'D5',0.5]],
+         [[0,'C5',0.75],[0.75,'C5',0.25],[1,'A4',0.5],[1.5,'F4',0.5],[2,'A4',1],[3,'C5',1]],
+         [[0,'E5',0.75],[0.75,'G5',0.25],[1,'E5',0.5],[1.5,'D5',0.5],[2,'C5',1],[3,'E5',1]],
+         [[0,'D5',0.75],[0.75,'D5',0.25],[1,'B4',0.5],[1.5,'G4',0.5],[2,'B4',1],[3,'D5',0.5],[3.5,'E5',0.5]]],
+};
+const MUS_B = {   // bosses: dubstep in D minor
+  rootN: ['D2','D2','Bb1','C2','D2','D2','Bb1','A1'],
+  tri: [['D4','F4','A4'],['D4','F4','A4'],['Bb3','D4','F4'],['C4','E4','G4'],['D4','F4','A4'],['D4','F4','A4'],['Bb3','D4','F4'],['A3','C#4','E4']],
+  rates: [2,4,3,2,2,4,3,6],
+  mel: [[4,0,'A5',1],[4,1,'F5',0.5],[4,1.5,'A5',0.5],[4,2,'D6',1.5],[4,3.5,'C6',0.5],
+        [5,0,'A5',1],[5,1,'F5',0.5],[5,1.5,'A5',0.5],[5,2,'E6',1.5],[5,3.5,'D6',0.5],
+        [6,0,'F5',1],[6,1,'D5',0.5],[6,1.5,'F5',0.5],[6,2,'Bb5',1.5],[6,3.5,'A5',0.5],
+        [7,0,'E5',1],[7,1,'A5',1],[7,2,'C#6',1],[7,3,'E6',1]],
+};
+const MUS_H = {   // insanity: drum & bass in E minor
+  rootN: ['E2','E2','C2','D2','E2','E2','C2','B1'],
+  tri: [['E4','G4','B4'],['E4','G4','B4'],['C4','E4','G4'],['D4','F#4','A4'],['E4','G4','B4'],['E4','G4','B4'],['C4','E4','G4'],['B3','D#4','F#4']],
+};
+// Each track builds ONE bar per call (called a little ahead of time by musicTick), so no big hitches.
 const MUSIC = {
-  // Levels: upbeat house groove in A minor. Offbeat bass, pumping pads, supersaw riff.
-  normal: { bpm:128, bars:8, fade:0.4, build(mg, t, beat, bar) {
-    const chords = [['A3','C4','E4'],['F3','A3','C4'],['C4','E4','G4'],['B3','D4','G4'],['A3','C4','E4'],['F3','A3','C4'],['B3','D4','G4'],['G#3','B3','E4']];
-    const roots  = ['A2','F2','C3','G2','A2','F2','G2','E2'];
-    const riff = [[0,0,'E5',0.75],[0,0.75,'E5',0.25],[0,1,'D5',0.5],[0,1.5,'C5',0.5],[0,2,'A4',1],[0,3,'C5',0.5],[0,3.5,'D5',0.5],
-      [1,0,'C5',0.75],[1,0.75,'C5',0.25],[1,1,'A4',0.5],[1,1.5,'F4',0.5],[1,2,'A4',1],[1,3,'C5',1],
-      [2,0,'E5',0.75],[2,0.75,'G5',0.25],[2,1,'E5',0.5],[2,1.5,'D5',0.5],[2,2,'C5',1],[2,3,'E5',1],
-      [3,0,'D5',0.75],[3,0.75,'D5',0.25],[3,1,'B4',0.5],[3,1.5,'G4',0.5],[3,2,'B4',1],[3,3,'D5',0.5],[3,3.5,'E5',0.5]];
-    vCrash(t, mg, 0.1); vCrash(t+4*bar, mg, 0.07);
-    chords.forEach((ch, i) => {
-      const tb = t + i*bar, hi = ch.map(n => nf(n)*2);
+  normal: { bpm:128, bars:8, fade:0.4,
+    intro(mg, t, beat, bar) { vWind(t, bar*8 + 1.5, 0.02, mg, 1500); },
+    bar(mg, i, tb, beat, bar) {
+      const ch = MUS_N.chords[i], hi = ch.map(n => nf(n)*2);
+      if (i === 0) vCrash(tb, mg, 0.1); if (i === 4) vCrash(tb, mg, 0.07);
       vPump(ch.map(nf), tb, bar+0.05, 0.042, mg, 1500, beat);
       for (let k = 0; k < 4; k++) {
         vKick(tb+k*beat, mg, 0.4);
         if (k%2 === 1) vClap(tb+k*beat, mg, 0.15);
         vHat(tb+(k+0.5)*beat, mg, 0.06, true);
         [0, 0.25, 0.75].forEach(o => vHat(tb+(k+o)*beat, mg, 0.02, false));
-        vBass(nf(roots[i]), tb+(k+0.5)*beat, beat*0.38, 0.22, mg);
+        vBass(nf(MUS_N.roots[i]), tb+(k+0.5)*beat, beat*0.38, 0.22, mg);
       }
       const steps = i < 4 ? 8 : 16, sd = bar/steps;
-      for (let k = 0; k < steps; k++) vLead(hi[[0,1,2,1][k%4]], tb+k*sd, sd*1.6, 0.04, mg, 2600);
-    });
-    [0, 1].forEach(half => riff.forEach(([b, bt, n, d]) => {
-      const tt = t + (half*4+b)*bar + bt*beat;
-      vLead(nf(n), tt, d*beat*0.95, half ? 0.075 : 0.055, mg, half ? 4200 : 2600);
-      if (half) vLead(nf(n)*2, tt, d*beat*0.9, 0.02, mg, 5000);
-    }));
-    vRiser(t+7*bar, bar, 0.08, mg);
-    for (let k = 0; k < 8; k++) vSnare(t+7*bar+2*beat+k*beat*0.25, mg, 0.05+k*0.01);
-  }},
-  // Bosses: heavy half-time dubstep. Wobble bass, big snare, stabs and a screaming lead. D minor.
-  boss: { bpm:140, bars:8, fade:0.15, build(mg, t, beat, bar) {
-    const rootN = ['D2','D2','Bb1','C2','D2','D2','Bb1','A1'];
-    const tri = [['D4','F4','A4'],['D4','F4','A4'],['Bb3','D4','F4'],['C4','E4','G4'],['D4','F4','A4'],['D4','F4','A4'],['Bb3','D4','F4'],['A3','C#4','E4']];
-    const rates = [2,4,3,2,2,4,3,6];
-    const mel = [[4,0,'A5',1],[4,1,'F5',0.5],[4,1.5,'A5',0.5],[4,2,'D6',1.5],[4,3.5,'C6',0.5],
-      [5,0,'A5',1],[5,1,'F5',0.5],[5,1.5,'A5',0.5],[5,2,'E6',1.5],[5,3.5,'D6',0.5],
-      [6,0,'F5',1],[6,1,'D5',0.5],[6,1.5,'F5',0.5],[6,2,'Bb5',1.5],[6,3.5,'A5',0.5],
-      [7,0,'E5',1],[7,1,'A5',1],[7,2,'C#6',1],[7,3,'E6',1]];
-    vCrash(t, mg, 0.12); vTaiko(t, mg, 0.3);
-    rootN.forEach((rn, i) => {
-      const tb = t + i*bar, f = nf(rn);
+      for (let k = 0; k < steps; k++) vLead(hi[[0,1,2,1][k%4]], tb+k*sd, sd*1.6, 0.04, mg, 2600, [-9, 9]);
+      const half = i >= 4 ? 1 : 0;
+      MUS_N.riff[i%4].forEach(([bt, n, d]) => { const tt = tb + bt*beat; vLead(nf(n), tt, d*beat*0.95, half ? 0.075 : 0.055, mg, half ? 4200 : 2600); if (half) vLead(nf(n)*2, tt, d*beat*0.9, 0.02, mg, 5000, [-9, 9]); });
+      if (i === 7) { vRiser(tb, bar, 0.08, mg); for (let k = 0; k < 8; k++) vSnare(tb+2*beat+k*beat*0.25, mg, 0.05 + k*0.01); }
+    }},
+  boss: { bpm:140, bars:8, fade:0.15,
+    intro(mg, t, beat, bar) { vWind(t, bar*8 + 1, 0.014, mg, 2200); },
+    bar(mg, i, tb, beat, bar) {
+      const f = nf(MUS_B.rootN[i]), tri = MUS_B.tri[i];
+      if (i === 0) { vCrash(tb, mg, 0.12); vTaiko(tb, mg, 0.3); }
       vSub(f, tb, bar, 0.2, mg);
-      [[0,2,1],[2,1,2],[3,1,2]].forEach(([o, d, rm]) => vWobble(f*2, tb+o*beat, d*beat*0.95, 0.12, mg, rates[i]/beat*(rm === 2 ? 1 : 1)));
-      vKick(tb, mg, 0.34); vKick(tb+2.5*beat, mg, 0.26);
-      vSnare(tb+2*beat, mg, 0.22); vClap(tb+2*beat, mg, 0.14);
+      [[0,2],[2,1],[3,1]].forEach(([o, d]) => vWobble(f*2, tb+o*beat, d*beat*0.95, 0.12, mg, MUS_B.rates[i]/beat));
+      vKick(tb, mg, 0.34); vKick(tb+2.5*beat, mg, 0.26); vSnare(tb+2*beat, mg, 0.22); vClap(tb+2*beat, mg, 0.14);
       for (let k = 0; k < 8; k++) vHat(tb+k*beat*0.5, mg, k%2 ? 0.05 : 0.03, false);
       if (i === 3 || i === 7) for (let k = 0; k < 8; k++) vHat(tb+2*beat+k*beat*0.25, mg, 0.05, false);
-      vPump(tri[i].map(nf), tb, bar+0.05, 0.03, mg, 1800, beat);
-      if (i >= 4) [0, 1.5, 3].forEach(o => tri[i].forEach(n => vLead(nf(n), tb+o*beat, beat*0.4, 0.03, mg, 3800)));
-    });
-    mel.forEach(([b, bt, n, d]) => vLead(nf(n), t+b*bar+bt*beat, d*beat*0.9, 0.06, mg, 4500));
-    vRiser(t+7*bar, bar, 0.1, mg);
-    for (let k = 0; k < 8; k++) vSnare(t+7*bar+2*beat+k*beat*0.25, mg, 0.06+k*0.012);
-  }},
-  // Insanity: frantic drum & bass. Reese bass, two-step breakbeat, crushed arps, glitches. E minor.
-  hacker: { bpm:174, bars:8, fade:0.15, build(mg, t, beat, bar) {
-    const rootN = ['E2','E2','C2','D2','E2','E2','C2','B1'];
-    const tri = [['E4','G4','B4'],['E4','G4','B4'],['C4','E4','G4'],['D4','F#4','A4'],['E4','G4','B4'],['E4','G4','B4'],['C4','E4','G4'],['B3','D#4','F#4']];
-    vCrash(t, mg, 0.12); vCrash(t+4*bar, mg, 0.08);
-    rootN.forEach((rn, i) => {
-      const tb = t + i*bar, f = nf(rn);
+      vPump(tri.map(nf), tb, bar+0.05, 0.03, mg, 1800, beat);
+      if (i >= 4) [0, 1.5, 3].forEach(o => tri.forEach(n => vLead(nf(n), tb+o*beat, beat*0.4, 0.03, mg, 3800, [-9, 9])));
+      MUS_B.mel.filter(m => m[0] === i).forEach(([b, bt, n, d]) => vLead(nf(n), tb+bt*beat, d*beat*0.9, 0.06, mg, 4500));
+      if (i === 7) { vRiser(tb, bar, 0.1, mg); for (let k = 0; k < 8; k++) vSnare(tb+2*beat+k*beat*0.25, mg, 0.06 + k*0.012); }
+    }},
+  hacker: { bpm:174, bars:8, fade:0.15,
+    bar(mg, i, tb, beat, bar) {
+      const f = nf(MUS_H.rootN[i]), tri = MUS_H.tri[i];
+      if (i === 0) vCrash(tb, mg, 0.12); if (i === 4) vCrash(tb, mg, 0.08);
       [[0,1.5],[2.5,0.5],[3,1]].forEach(([o, d]) => vReese(f*2, tb+o*beat, d*beat*0.95, 0.15, mg));
       vSub(f, tb, bar, 0.14, mg);
-      vKick(tb, mg, 0.42); vKick(tb+2.5*beat, mg, 0.34);
-      vSnare(tb+beat, mg, 0.24); vSnare(tb+3*beat, mg, 0.24);
+      vKick(tb, mg, 0.38); vKick(tb+2.5*beat, mg, 0.3); vSnare(tb+beat, mg, 0.21); vSnare(tb+3*beat, mg, 0.21);
       for (let k = 0; k < 8; k++) vHat(tb+k*beat*0.5, mg, k%2 ? 0.04 : 0.025, false);
-      vPump(tri[i].map(nf), tb, bar+0.05, 0.022, mg, 1400, beat);
-      for (let k = 0; k < 16; k++) vBlip(nf(tri[i][[0,1,2,1][k%4]])*2, tb+k*beat*0.25, beat*0.2, 0.05, mg, 6);
-      [0, 1.5, 3].forEach(o => tri[i].forEach(n => vLead(nf(n)*2, tb+o*beat, beat*0.35, 0.035, mg, 4200)));
+      vPump(tri.map(nf), tb, bar+0.05, 0.022, mg, 1400, beat);
+      for (let k = 0; k < 16; k++) vBlip(nf(tri[[0,1,2,1][k%4]])*2, tb+k*beat*0.25, beat*0.2, 0.05, mg, 6);
+      [0, 1.5, 3].forEach(o => tri.forEach(n => vLead(nf(n)*2, tb+o*beat, beat*0.35, 0.035, mg, 4200, [-9, 9])));
       if (i === 3 || i === 7) for (let k = 0; k < 8; k++) vGlitch(tb+3*beat+k*beat/8, mg, 0.05);
-    });
-    vRiser(t+7*bar, bar, 0.09, mg);
-  }},
+      if (i === 7) vRiser(tb, bar, 0.09, mg);
+    }},
 };
-function scheduleMusic(name, start, first) {
-  if (!Audio.musicRunning || Audio.currentTrack !== name || !Audio.ctx) return;
-  const T = MUSIC[name], beat = 60/T.bpm, bar = beat*4, loop = bar*T.bars;
-  const mg = Audio.ctx.createGain();
-  mg.gain.setValueAtTime(first ? 0.0001 : 1, start); if (first) mg.gain.linearRampToValueAtTime(1, start+T.fade);
-  mg.connect(Audio.musicMaster);
-  T.build(mg, start, beat, bar);
-  const delay = Math.max((start+loop-Audio.now()-0.8)*1000, 50);
-  Audio.timeouts.push(setTimeout(() => scheduleMusic(name, start+loop, false), delay));
+
+// Look-ahead scheduler: every 100ms, build whatever bars start within the next ~2.6s.
+// While the audio clock is stopped (pause, hidden tab) nothing is built, and it never schedules notes in the past.
+function musicTick() {
+  const A = Audio; if (!A.musicRunning || !A.ctx || A.ctx.state !== 'running') return;
+  const T = MUSIC[A.currentTrack]; if (!T) return;
+  const beat = 60/T.bpm, bar = beat*4, now = A.ctx.currentTime;
+  while (A.musicNext < now + 0.05) { A.musicNext += bar; A.musicBar = (A.musicBar + 1) % T.bars; }
+  let guard = 0;
+  while (A.musicNext - now < 2.6 && guard++ < 3) {
+    if (A.musicBar === 0 && T.intro) T.intro(A.musicMG, A.musicNext, beat, bar);
+    T.bar(A.musicMG, A.musicBar, A.musicNext, beat, bar);
+    A.musicNext += bar; A.musicBar = (A.musicBar + 1) % T.bars;
+  }
 }
 
+
 function stopMusic() {
-  Audio.timeouts.forEach(clearTimeout);
-  Audio.timeouts = [];
-  Audio.musicRunning = false;
-  Audio.currentTrack = null;
+  clearInterval(Audio.musicTimer); Audio.musicTimer = null; clearTimeout(_musicLaterT);
+  Audio.timeouts.forEach(clearTimeout); Audio.timeouts = [];
+  Audio.musicRunning = false; Audio.currentTrack = null; Audio.musicMG = null;
   if (Audio.ctx && Audio.musicMaster) {
     const old = Audio.musicMaster, now = Audio.ctx.currentTime;
     old.gain.cancelScheduledValues(now); old.gain.setValueAtTime(old.gain.value, now); old.gain.linearRampToValueAtTime(0, now+0.25);
@@ -1335,26 +1352,32 @@ function stopMusic() {
 // Nuclear option: close the whole AudioContext so every node stops instantly.
 // Called on game over. initAudio() builds a fresh one next game.
 function killAudio() {
-  Audio.timeouts.forEach(clearTimeout);
-  Audio.timeouts = [];
-  Audio.musicRunning = false;
-  Audio.currentTrack = null;
+  clearInterval(Audio.musicTimer); Audio.musicTimer = null; clearTimeout(_musicLaterT);
+  Audio.timeouts.forEach(clearTimeout); Audio.timeouts = [];
+  Audio.musicRunning = false; Audio.currentTrack = null; Audio.musicMG = null;
   Audio.activeNodes = [];
   if (Audio.ctx) {
     try { Audio.ctx.close(); } catch(e) {}
     Audio.ctx = Audio.masterGain = Audio.sfxGain = Audio.reverbSend = Audio.musicMaster = null;
-    Audio.reverbIn = Audio.echoIn = Audio.sfxBus = Audio.noiseBuf = null;
+    Audio.reverbIn = Audio.echoIn = Audio.sfxBus = Audio.noiseBuf = Audio.drums = null;
   }
 }
 
+let _musicLaterT = null;
+// Which track belongs to what is happening right now
+function levelTrack() { const s = Game.state; return !s ? 'normal' : s.level === 11 ? 'hacker' : (s.bossPhase || s.mode === 'arena') ? 'boss' : 'normal'; }
+// Start music shortly (after the level-change sound). Only the latest request counts, and leaving / dying cancels it.
+function musicLater(track, ms) { clearTimeout(_musicLaterT); _musicLaterT = setTimeout(() => { const tr = typeof track === 'function' ? track() : track; if (tr) startMusic(tr); }, ms); }
 function startMusic(track) {
-  if (Audio.currentTrack === track) return;
+  if (Audio.currentTrack === track && Audio.musicRunning) return;
   stopMusic();
   if (!Audio.ctx || !Audio.enabled || !MUSIC[track]) return;
   if (Audio.ctx.state === 'suspended') Audio.ctx.resume();
-  Audio.currentTrack = track;
-  Audio.musicRunning = true;
-  scheduleMusic(track, Audio.now() + 0.05, true);
+  const c = Audio.ctx, T = MUSIC[track], now = c.currentTime, mg = c.createGain();
+  mg.gain.setValueAtTime(0.0001, now + 0.2); mg.gain.linearRampToValueAtTime(1, now + 0.2 + T.fade);
+  mg.connect(Audio.musicMaster);
+  Audio.musicMG = mg; Audio.currentTrack = track; Audio.musicRunning = true; Audio.musicNext = now + 0.2; Audio.musicBar = 0;
+  Audio.musicTimer = setInterval(musicTick, 100); musicTick();
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -1624,7 +1647,7 @@ function advanceLevel() {
   Game.state = initLevel(nxt); Game.state.lives = keptLives;
   document.getElementById('boss-hud').style.display = 'none';
   updateHUD(); saveProgress(); startLevelTransition(bonus);
-  setTimeout(() => startMusic('normal'), 300);
+  musicLater('normal', 300);
   if (MP.mode === 2 && MP.ready && MP.conn) MP.conn.send({ type: 'levelchange', level: nxt, score: Game.state.score });
 }
 
@@ -1746,7 +1769,7 @@ function triggerHackerLevel() {
   };
   document.getElementById('boss-hud').style.display = 'none';
   updateHUD();
-  setTimeout(() => startMusic('hacker'), 400);
+  musicLater('hacker', 400);
   if (!Game.animId) loop();
 }
 
@@ -1771,7 +1794,7 @@ function spawnBoss(remote) {
   updateBossHUD(); sfxLevelUp();
   Game.state.bossStartTime = 0; // set when the intro finishes
   Game.state.bossIntro = {timer:160, max:160, name:'THE OVERLORD', sub:'RULER OF THE GRID', color:'#ff0066', speedkill:true};
-  setTimeout(() => startMusic('boss'), 600);
+  musicLater('boss', 600);
   if (!remote && MP.role==='host' && MP.ready && MP.conn) MP.conn.send({type:'boss'});
 }
 
@@ -1793,7 +1816,7 @@ function spawnHackerBoss(remote) {
   document.getElementById('boss-label').textContent = '⚠ HACKER CORE';
   Game.state.bossIntro = {timer:160, max:160, name:'HACKER CORE', sub:'SYSTEM BREACH DETECTED', color:'#00ff00', speedkill:false};
   updateBossHUD(); sfxLevelUp();
-  setTimeout(() => startMusic('hacker'), 300);
+  musicLater('hacker', 300);
   if (!remote && MP.role==='host' && MP.ready && MP.conn) MP.conn.send({type:'boss'});
 }
 
@@ -2105,7 +2128,7 @@ function spawnLevelBoss(level, remote) {
   updateBossHUD(); sfxLevelUp();
   s.bossStartTime = 0;
   s.bossIntro = { timer: 160, max: 160, name: def.name, sub: def.sub, color: def.color, speedkill: false };
-  setTimeout(() => startMusic('boss'), 600);
+  musicLater('boss', 600);
   if (!remote && MP.role === 'host' && MP.ready && MP.conn) MP.conn.send({ type: 'boss' });
 }
 
@@ -2663,7 +2686,7 @@ function updateHUD() {
   document.getElementById('hud-score').textContent = s.score;
   document.getElementById('hud-level').textContent = s.level;
   document.getElementById('hud-world-label').textContent = ['α','β','γ'][Game.activeSlot] || '';
-  document.title = 'Neon Run — LVL ' + s.level + (s.name ? ' · ' + s.name : '');
+  document.title = 'NEON RUN — LVL ' + s.level + (s.name ? ' · ' + s.name : '');
   const curStats = getStats();
   if ((curStats.maxLevel||0) < s.level) updateStats({maxLevel: s.level});
   (function(){ const hp = pixIcon(HEART_ROWS,{O:'#7a1230',P:'#ffd0dc',R:'#ff3e6c'},3);
@@ -3049,7 +3072,7 @@ function respawn() {
   }
   updateHUD(); showDpad();
   document.getElementById('exit-btn').style.display = 'block'; showFsBtn();
-  Game.resetSession(); startAutoSave(); startMusic('normal');
+  Game.resetSession(); startAutoSave(); musicLater(levelTrack, 350);   // right track for boss fights / Insanity
   if (!Game.animId) loop();
 }
 
@@ -3341,19 +3364,62 @@ const BG_SCENES = {
     const swing = []; for (let i = 0; i < 7; i++) swing.push({ x: 24 + i*57 + ((rng()*14)|0), y0: 0, len: 36 + ((rng()*50)|0), kind: 'lantern' });
     return { sky, layers: [{ cv: far, f: 0.06 }, { cv: mid, f: 0.2, blink: { cv: mb, p: 36 }, swing }, { cv: near, f: 0.4 }] };
   },
-  // 7 STAIRWAY: golden heaven, sun rays, floating stairs, clouds
+  // 7 STAIRWAY: a grand marble stairway rising to a glowing gate, floating temples, seas of cloud
   7() {
-    const rng = bgRng(707), sky = bgSky(['#0e0a02','#2c2206','#6d5510','#b8921e','#f2d25a','#fff4b0'], d => {
-      for (let y = 0; y < BGH; y++) for (let x = 0; x < BGW; x++) { const an = Math.atan2(y - 110, x - 200); if ((Math.floor((an + 3.1416)/(3.1416/10)) & 1) === 1) { const o = (y*BGW + x)*4; d[o] = Math.min(255, d[o] + 16); d[o+1] = Math.min(255, d[o+1] + 14); d[o+2] = Math.min(255, d[o+2] + 6); } } }), sc = sky.getContext('2d');
-    bgDisc(sc, 200, 110, 28, '#fff0a0'); bgDisc(sc, 200, 110, 22, '#fffbe0');
-    const cloud = (c, seed, y0, n, col) => { const r = bgRng(seed); for (let i = 0; i < n; i++) { const x = (r()*BGW)|0, y = y0 + ((r()*30)|0), w = 14 + ((r()*18)|0); bgDisc(c, x, y, 6, col); bgDisc(c, x + 8, y + 2, 7, col); bgDisc(c, x + 16, y + 1, 5, col); bgR(c, x - 4, y + 2, w + 14, 6, col); } };
-    const far = bgCv(), fc = far.getContext('2d'); cloud(fc, 1, 150, 7, 'rgba(255,238,170,0.55)');
-    const stairs = (c, x0, y0, n, sw, sh, col, rim) => { for (let i = 0; i < n; i++) { bgR(c, x0 + i*sw, y0 - i*sh, sw, 12 + i*sh*0 + sh, col); bgR(c, x0 + i*sw, y0 - i*sh, sw, 1, rim); } };
-    stairs(fc, 20, 150, 9, 12, 6, '#7a6218', '#ffe27a'); stairs(fc, 240, 120, 10, 11, 6, '#7a6218', '#ffe27a');
-    const mid = bgCv(), mc = mid.getContext('2d'); stairs(mc, 60, 190, 11, 12, 7, '#3a2c08', '#ffd23f'); stairs(mc, 250, 170, 9, 13, 6, '#3a2c08', '#ffd23f'); cloud(mc, 2, 185, 5, 'rgba(255,230,150,0.45)');
-    const near = bgCv(), nc = near.getContext('2d'); stairs(nc, 10, 214, 8, 14, 5, '#150f03', '#ffd23f'); stairs(nc, 200, 214, 12, 12, 4, '#150f03', '#ffd23f'); cloud(nc, 3, 200, 4, 'rgba(255,240,180,0.35)');
-    return { sky, layers: [{ cv: far, f: 0.05 }, { cv: mid, f: 0.15 }, { cv: near, f: 0.38 }],
-      post(c, t) { for (let i = 0; i < 28; i++) if (Math.sin(t*0.07 + i*2) > 0.82) { const x = (i*97) % W, y = (i*41) % (H*0.8); pxr(x, y, PS, PS, '#ffffff'); pxr(x - PS, y, PS, PS, '#ffe27a'); pxr(x + PS, y, PS, PS, '#ffe27a'); pxr(x, y - PS, PS, PS, '#ffe27a'); pxr(x, y + PS, PS, PS, '#ffe27a'); } } };
+    const rng = bgRng(707), GX = 200, GY = 96;
+    const sky = bgSky(['#1a1204','#3a2a08','#7a5e14','#c9a22c','#f0d060','#fff0a8'], d => {   // sun rays fanning out of the gate
+      for (let y = 0; y < BGH; y++) for (let x = 0; x < BGW; x++) { const an = Math.atan2(y - GY, x - GX); if ((Math.floor((an + 3.1416)/(3.1416/12)) & 1) === 1) { const o = (y*BGW + x)*4; d[o] = Math.min(255, d[o] + 15); d[o+1] = Math.min(255, d[o+1] + 13); d[o+2] = Math.min(255, d[o+2] + 6); } } }), sc = sky.getContext('2d');
+    bgDisc(sc, GX, GY, 40, '#ffe9a0'); bgDisc(sc, GX, GY, 30, '#fff4c0'); bgDisc(sc, GX, GY, 20, '#ffffff');
+    // a pixel cloud: bumpy top, flat shaded bottom
+    const cloud = (c, x, y, w, col, shade, hi) => {
+      const n = Math.max(2, (w/10)|0);
+      for (let i = 0; i < n; i++) { const cx = x + 5 + i*((w - 10)/(n - 1)), r = 5 + ((bgHash(x + i*3, y)*5)|0); bgDisc(c, Math.round(cx), y - r + 3, r, col); bgR(c, cx - r*0.5, y - r*2 + 5, 3, 1, hi); }
+      bgR(c, x, y - 3, w, 6, col); bgR(c, x, y + 1, w, 3, shade); bgR(c, x + 2, y + 3, w - 4, 1, shade);
+    };
+    const far = bgCv(), fc = far.getContext('2d');
+    // distant floating temple islands
+    [[34, 52], [152, 74], [296, 44]].forEach(([ix, iy], k) => {
+      for (let dy = 0; dy < 16; dy++) { const w = Math.round(30*(1 - dy/17)); bgR(fc, ix - (w>>1), iy + dy, w, 1, dy < 2 ? '#e6cb72' : dy < 8 ? '#b6963a' : '#8f7226'); }
+      bgR(fc, ix - 9, iy - 2, 18, 2, '#e6d085');
+      for (let c = 0; c < 4; c++) bgR(fc, ix - 7 + c*5, iy - 11, 1, 9, '#e6d085');
+      for (let r = 0; r < 4; r++) bgR(fc, ix - 9 + r*2, iy - 15 + r, 18 - r*4, 1, '#d9bc5e');
+      if (k === 1) bgR(fc, ix - 1, iy - 19, 2, 4, '#fff0a8');
+    });
+    for (let i = 0; i < 6; i++) cloud(fc, (i*70 + ((rng()*30)|0)) % 380, 150 + ((rng()*40)|0), 36 + ((rng()*28)|0), '#f7e49a', '#d9b84e', '#fffbe0');
+    const mid = bgCv(), mc = mid.getContext('2d'), mb = bgCv(), mbc = mb.getContext('2d');
+    const BASE = 211, SW = 10, SH = 8, N = 12, LX = 60, MASS = '#7d6224', TREAD = '#fff1b8', RISER = '#d4b658', SEAM = '#61491a', EDGE = '#4a3508';
+    const hAt = x => x < LX ? 0 : x < LX + N*SW ? (Math.floor((x - LX)/SW) + 1)*SH : x < LX + N*SW + 40 ? (N + 1)*SH : x < LX + N*SW + 40 + N*SW ? (N - Math.floor((x - (LX + N*SW + 40))/SW))*SH : 0;
+    for (let x = LX; x < LX + N*SW*2 + 40; x++) { const h = hAt(x); if (h) { mc.fillStyle = MASS; mc.fillRect(x, BASE - h, 1, h + 6); } }
+    for (let x = LX; x < LX + N*SW*2 + 40; x += 20) { const h = hAt(x); if (h) { mc.fillStyle = SEAM; mc.fillRect(x, BASE - h + 2, 1, h); } }
+    for (let y = BASE - (N + 1)*SH + 12; y < BASE; y += 16) for (let x = LX; x < LX + N*SW*2 + 40; x++) if (hAt(x) >= BASE - y) { mc.fillStyle = SEAM; mc.fillRect(x, y, 1, 1); }
+    for (let ax = LX + 10; ax < LX + N*SW*2 + 40 - 6; ax += 20) {     // shadowed arches under the stairs
+      const AH = 26; if (hAt(ax) < AH + 8) continue;
+      mc.fillStyle = '#2a1c04'; mc.fillRect(ax - 6, BASE - AH + 6, 12, AH - 6);
+      for (let r = 0; r < 6; r++) { const w = Math.floor(Math.sqrt(36 - (6 - r)*(6 - r))); mc.fillRect(ax - w, BASE - AH + r, w*2, 1); }
+      mc.fillStyle = '#6a4c12'; mc.fillRect(ax - 6, BASE - 2, 12, 2); mc.fillStyle = '#7d6224'; mc.fillRect(ax - 7, BASE - AH + 5, 1, AH - 4); mc.fillRect(ax + 6, BASE - AH + 5, 1, AH - 4);
+    }
+    const stepEdge = (x, h, left) => {   // light tread, shaded riser, dark outline for one step
+      const y = BASE - h; bgR(mc, x, y, SW, 2, TREAD); bgR(mc, x, y + 2, SW, 1, RISER); bgR(mc, x, y - 1, SW, 1, EDGE); bgR(mc, left ? x : x + SW - 1, y - 1, 1, SH + 1, EDGE);
+      bgR(mc, left ? x + 1 : x, y + 3, 1, SH - 3, RISER);
+    };
+    for (let i = 0; i < N; i++) { stepEdge(LX + i*SW, (i + 1)*SH, true); stepEdge(LX + N*SW + 40 + i*SW, (N - i)*SH, false); }
+    const LT = BASE - (N + 1)*SH, L0 = LX + N*SW;      // landing + gate
+    bgR(mc, L0, LT, 40, 3, TREAD); bgR(mc, L0, LT - 1, 40, 1, EDGE); bgR(mc, L0 - 2, LT + 3, 44, 3, '#d9bc5e');
+    bgR(mc, L0 + 12, LT - 36, 16, 36, '#fffbe0');                                // glowing gate opening
+    bgR(mc, L0 + 14, LT - 34, 12, 34, '#ffffff'); bgR(mc, L0 + 18, LT - 34, 4, 34, '#fffbe0');
+    [L0 + 6, L0 + 28].forEach(px => { bgR(mc, px, LT - 36, 6, 36, '#e8d28a'); bgR(mc, px + 1, LT - 36, 1, 36, '#fff1b8'); bgR(mc, px - 1, LT - 38, 8, 3, '#d9bc5e'); bgR(mc, px - 1, LT - 2, 8, 2, '#d9bc5e'); });
+    bgR(mc, L0 + 3, LT - 44, 34, 6, '#e8d28a'); bgR(mc, L0 + 3, LT - 44, 34, 1, '#fff1b8'); bgR(mc, L0 + 3, LT - 39, 34, 1, EDGE);
+    for (let r = 0; r < 6; r++) bgR(mc, L0 + 6 + r*3, LT - 50 + r, 28 - r*6, 1, '#d9bc5e');   // pediment
+    bgR(mc, L0 + 19, LT - 58, 2, 8, '#fff1b8'); bgR(mc, L0 + 16, LT - 55, 8, 2, '#fff1b8');   // crowning cross
+    mbc.fillStyle = 'rgba(255,250,200,0.30)'; mbc.fillRect(L0 + 9, LT - 40, 22, 40); mbc.fillStyle = 'rgba(255,250,200,0.18)'; mbc.fillRect(L0 + 4, LT - 46, 32, 46);
+    [[L0 + 3, LT - 60], [L0 + 38, LT - 30], [L0 - 14, LT + 4]].forEach(([sx, sy]) => { mbc.fillStyle = '#ffffff'; mbc.fillRect(sx, sy, 1, 1); mbc.fillRect(sx - 1, sy, 3, 1); mbc.fillRect(sx, sy - 1, 1, 3); });
+    const near = bgCv(), nc = near.getContext('2d');
+    for (let i = 0; i < 4; i++) cloud(nc, 20 + i*100 + ((rng()*30)|0), 209, 34 + ((rng()*20)|0), '#e0bf5c', '#a98428', '#fff0a8');
+    return { sky, layers: [{ cv: far, f: 0.05 }, { cv: mid, f: 0.15, blink: { cv: mb, p: 26 } }, { cv: near, f: 0.38 }],
+      post(c, t) {
+        for (let i = 0; i < 32; i++) pxr((i*97 + Math.sin(i + t*0.015)*14) % W, H - ((t*(0.35 + (i%4)*0.15) + i*53) % H), PS, PS, i%3 ? '#ffe27a' : '#ffffff');
+        for (let i = 0; i < 24; i++) if (Math.sin(t*0.07 + i*2) > 0.82) { const x = (i*131) % W, y = (i*41) % (H*0.7); pxr(x, y, PS, PS, '#ffffff'); pxr(x - PS, y, PS, PS, '#ffe27a'); pxr(x + PS, y, PS, PS, '#ffe27a'); pxr(x, y - PS, PS, PS, '#ffe27a'); pxr(x, y + PS, PS, PS, '#ffe27a'); }
+      } };
   },
   // 8 GAUNTLET: foundry of hazard girders, saw gears, hanging spike balls, lava
   8() {
@@ -4519,7 +4585,7 @@ function warpToLevel(lvl, toBoss) {
   updateHUD(); stopMusic();
   showDpad(); if(!Game.animId) loop();
   if (toBoss && lvl <= 10) enterArena(true);
-  setTimeout(()=>startMusic(Game.state.bossPhase?'boss':'normal'),300);
+  musicLater(levelTrack, 300);
   if(MP.ready&&MP.conn) MP.conn.send({type:'levelchange',level:lvl,score:prevScore});
 }
 
@@ -4632,7 +4698,7 @@ function exitLeaveNoSave()  { if(!confirm('Leave without saving? Progress since 
 
 function doLeave() {
   cancelAnimationFrame(Game.animId); Game.animId=null; stopMusic(); clearInterval(Game.autoSaveId);
-  Game.state=null; MP.p2=null; document.title='Neon Run';
+  Game.state=null; MP.p2=null; document.title='NEON RUN';
   document.getElementById('exit-btn').style.display='none';
   document.getElementById('boss-hud').style.display='none';
   document.getElementById('powerup-bar').innerHTML='';
@@ -4642,7 +4708,7 @@ function doLeave() {
   ov.style.cssText='display:flex;flex-direction:column;align-items:center;justify-content:center;position:absolute;inset:0;background:#0b0b11;';
   const isMobile=('ontouchstart' in window)||navigator.maxTouchPoints>0;
   ov.innerHTML=`
-    <h1>Neon Run</h1>
+    <h1>NEON RUN</h1>
     <div class="tagline">survive the grid</div>
     <div class="instructions">${isMobile?'Tap ◀ ▶ to move, ▲ to jump, » to dash &nbsp;|&nbsp; Stomp the bots<br>Reach the gate at the end of each level &nbsp;|&nbsp; Every level has its own boss':'Arrows or WASD to move and jump, Shift to dash &nbsp;|&nbsp; Stomp the bots<br>Reach the gate at the end of each level &nbsp;|&nbsp; Every level has its own boss'}</div>
     <div id="save-section"><div class="save-label">pick a save slot</div><div class="save-slots" id="save-slots"></div></div>
@@ -4688,7 +4754,7 @@ function toggleMusic() {
   Audio.enabled = !Audio.enabled;
   const btn=document.getElementById('music-toggle'); btn.textContent=Audio.enabled?'ON':'OFF'; btn.classList.toggle('on',Audio.enabled); saveSettings();
   if (!Audio.enabled) stopMusic();
-  else if (Game.state&&Game.animId) startMusic(Game.state.bossPhase?'boss':'normal');
+  else if (Game.state&&Game.animId) startMusic(levelTrack());
 }
 function toggleSfx() {
   Audio.sfxEnabled=!Audio.sfxEnabled;
@@ -5062,7 +5128,7 @@ if (!CanvasRenderingContext2D.prototype.roundRect) {
 document.addEventListener('visibilitychange',()=>{
   if (!Audio.ctx) return;
   if (document.hidden) Audio.ctx.suspend();
-  else { Audio.ctx.resume(); if(Game.state&&Game.animId&&!Audio.musicRunning) startMusic(Game.state.bossPhase?'boss':'normal'); }
+  else { Audio.ctx.resume(); if(Game.state&&Game.animId&&!Audio.musicRunning) startMusic(levelTrack()); }
 });
 
 // ── boot ─────────────────────────────────────────────────────
